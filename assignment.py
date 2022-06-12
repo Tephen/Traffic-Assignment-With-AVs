@@ -27,7 +27,7 @@ class FlowTransportNetwork:
         self.originZones = {}
 
         #自动驾驶流量比例
-        self.avRate = 0.0
+        self.avRate = 0.5
         self.hav = 1.0
         self.hcv = 1.8
         # self.networkx_graph = None
@@ -40,10 +40,14 @@ class FlowTransportNetwork:
     def reset_flow(self):
         for link in self.linkSet.values():
             link.reset_flow()
+        for mixLink in self.mixLinkSet.values():
+            mixLink.reset_flow()
 
     def reset(self):
         for link in self.linkSet.values():
             link.reset()
+        for mixLink in self.mixLinkSet.values():
+            mixLink.reset()
 
 
 class Zone:
@@ -302,6 +306,9 @@ def updateTravelTime(network: FlowTransportNetwork, optimal: bool = False, costF
                                                )
     
     for l in network.mixLinkSet:
+        # 仅当车道上车流量达到最低限度时更新车道的capacity和相应的cost time
+        if network.mixLinkSet[l].av_flow + network.mixLinkSet[l].cv_flow < 0.0001:
+            continue
         ra = (network.mixLinkSet[l].av_flow / (network.mixLinkSet[l].av_flow + network.mixLinkSet[l].cv_flow))
         network.mixLinkSet[l].capacity = (3600.0 / ((network.hav * ra) + (network.hcv * (1 - ra)))) * network.mixLinkSet[l].lane_num
         network.mixLinkSet[l].av_cost = costFunction(optimal,
@@ -332,19 +339,20 @@ def tracePreds(dest, network: FlowTransportNetwork):
     返回两个值,cvSpLinks和avSpLinks
     分别表示cv和av在网络中的最短路径,avSpLinks列表中的第二项表示路径类型
     """
-    cvPrevNode = network.nodeSet[dest].CVPred
+    avDest = cvDest = dest
+    cvPrevNode = network.nodeSet[cvDest].CVPred
     cvSpLinks = []
-    while cvPrevNode is not Node:
-        cvSpLinks.append((cvPrevNode, dest))
-        dest = cvPrevNode
-        cvPrevNode = network.nodeSet[dest].CVPred
+    while cvPrevNode is not None:
+        cvSpLinks.append((cvPrevNode, cvDest))
+        cvDest = cvPrevNode
+        cvPrevNode = network.nodeSet[cvDest].CVPred
     
-    avPrevNode = network.nodeSet[dest].AVPred
+    avPrevNode = network.nodeSet[avDest].AVPred
     avSpLinks = []
     while avPrevNode is not None:
-        avSpLinks.append([(avPrevNode, dest), network.nodeSet[dest].linkType])
-        dest = avPrevNode
-        avPrevNode = network.nodeSet[dest].AVPred
+        avSpLinks.append([(avPrevNode, avDest), network.nodeSet[avDest].linkType])
+        avDest = avPrevNode
+        avPrevNode = network.nodeSet[avDest].AVPred
     
     return cvSpLinks, avSpLinks
 
@@ -581,13 +589,15 @@ def assignment_loop(network: FlowTransportNetwork,
                 print(
                     "The assignment did not converge to the desired gap and the max number of iterations has been reached")
                 print("Assignment took", round(time.time() - assignmentStartTime, 5), "seconds")
-                print("Current gap:", round(gap, 5))
+                print("Current cv gap:", round(cv_gap, 5))
+                print("Current av gap:", round(av_gap, 5))
             return CV_TSTT, AV_TSTT
         if time.time() - assignmentStartTime > maxTime:
             if verbose:
                 print("The assignment did not converge to the desired gap and the max time limit has been reached")
                 print("Assignment did ", iteration_number, "iterations")
-                print("Current gap:", round(gap, 5))
+                print("Current cv gap:", round(cv_gap, 5))
+                print("Current av gap:", round(av_gap, 5))
             return CV_TSTT, AV_TSTT
 
     if verbose:
@@ -729,7 +739,7 @@ if __name__ == '__main__':
     # This is an example usage for calculating System Optimal and User Equilibrium with Frank-Wolfe
 
     net_file = str(PathUtils.chicago_net_file)
-
+    # net_file = str(PathUtils.braess_net_file)
     # total_system_travel_time_optimal = computeAssingment(net_file=net_file,
     #                                                      algorithm="FW",
     #                                                      costFunction=BPRcostFunction,
