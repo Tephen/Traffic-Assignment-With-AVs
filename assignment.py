@@ -27,7 +27,7 @@ class FlowTransportNetwork:
         self.originZones = {}
 
         #自动驾驶流量比例
-        self.avRate = 0.5
+        self.avRate = 0.1
         self.hav = 1.0
         self.hcv = 1.8
         # self.networkx_graph = None
@@ -99,7 +99,7 @@ class Link:
                  speed_limit: float,
                 #  toll: float,
                 #  linkType,
-                 lane_num = 10
+                 lane_num = 0
                  ):
         self.init_node = init_node
         self.term_node = term_node
@@ -151,7 +151,7 @@ class MixLink:
                  speed_limit: float,
                 #  toll: float,
                 #  linkType,
-                 lane_num = 10
+                 lane_num = 4
                  ):
         self.init_node = init_node
         self.term_node = term_node
@@ -281,7 +281,8 @@ def BPRcostFunction(optimal: bool,
                     # maxSpeed: float
                     ) -> float:
     if capacity < 1e-3:
-        return np.finfo(np.float32).max
+        # return np.finfo(np.float32).max
+        return 100000.0
     if optimal:
         return fft * (1 + (alpha * math.pow((flow * 1.0 / capacity), beta)) * (beta + 1))
     return fft * (1 + alpha * math.pow((flow * 1.0 / capacity), beta))
@@ -561,9 +562,9 @@ def assignment_loop(network: FlowTransportNetwork,
         AV_SPTT = round(AV_SPTT, 9)
         
         CV_TSTT = round(sum([network.mixLinkSet[a].cv_flow * network.mixLinkSet[a].cv_cost for a in 
-                            network.mixLinkSet], 9))
-        AV_TSTT = round((sum(network.linkSet[a].flow * network.linkSet[a].cost for a in network.linkSet) 
-                        + sum(network.mixLinkSet[b].av_flow * network.mixLinkSet[b].av_cost for b in network.mixLinkSet)), 9)
+                            network.mixLinkSet]), 9)
+        AV_TSTT = round((sum([network.linkSet[a].flow * network.linkSet[a].cost for a in network.linkSet]) 
+                        + sum([network.mixLinkSet[b].av_flow * network.mixLinkSet[b].av_cost for b in network.mixLinkSet])), 9)
         # TSTT = round(sum([network.linkSet[a].flow * network.linkSet[a].cost for a in
         #                   network.linkSet]), 9)
 
@@ -609,18 +610,23 @@ def assignment_loop(network: FlowTransportNetwork,
     return CV_TSTT, AV_TSTT
 
 
-def writeResults(network: FlowTransportNetwork, output_file: str, costFunction=BPRcostFunction,
+def writeResults(network: FlowTransportNetwork, output_file: str, AV_TSTT: float, CV_TSTT: float, costFunction=BPRcostFunction,
                  systemOptimal: bool = False, verbose: bool = True):
     outFile = open(output_file, "w")
-    TSTT = get_TSTT(network=network, costFunction=costFunction)
+    # TSTT = get_TSTT(network=network, costFunction=costFunction)
     if verbose:
-        print("\nTotal system travel time:", f'{TSTT} secs')
-    tmpOut = "Total Travel Time:\t" + str(TSTT)
+        # print("\nTotal system travel time:", f'{TSTT} secs')
+        print("\nTotal system travel time:", f'AV-TSTT: {AV_TSTT} secs  ## CV-TSTT: {CV_TSTT} secs')
+    tmpOut = "Total CV Travel Time:\t" + str(CV_TSTT)
     outFile.write(tmpOut + "\n")
-    tmpOut = "Cost function used:\t" + BPRcostFunction.__name__
+    tmpOut = "Total AV Travel Time:\t" + str(AV_TSTT)
     outFile.write(tmpOut + "\n")
-    tmpOut = ["User equilibrium (UE) or system optimal (SO):\t"] + ["SO" if systemOptimal else "UE"]
-    outFile.write("".join(tmpOut) + "\n\n")
+    # tmpOut = "Cost function used:\t" + BPRcostFunction.__name__
+    # outFile.write(tmpOut + "\n")
+    # tmpOut = ["User equilibrium (UE) or system optimal (SO):\t"] + ["SO" if systemOptimal else "UE"]
+    # outFile.write("".join(tmpOut) + "\n\n")
+    tmpOut = "AV-Dedicated Link Flow:"
+    outFile.write(tmpOut + "\n")
     tmpOut = "init_node\tterm_node\tflow\ttravelTime"
     outFile.write(tmpOut + "\n")
     for i in network.linkSet:
@@ -635,6 +641,33 @@ def writeResults(network: FlowTransportNetwork, output_file: str, costFunction=B
                                                                network.linkSet[i].length,
                                                             #    network.linkSet[i].speedLimit
                                                                ))
+        outFile.write(tmpOut + "\n")
+
+    tmpOut = "Mix-Flow Link Flow:"
+    outFile.write(tmpOut + "\n")
+    tmpOut = "init_node\tterm_node\tav_flow\tav_travelTime\tcv_flow\tcv_travelTime"
+    outFile.write(tmpOut + "\n")
+    for i in network.mixLinkSet:
+        tmpOut = str(network.mixLinkSet[i].init_node) + "\t" + str(
+            network.mixLinkSet[i].term_node) + "\t" + str(
+            network.mixLinkSet[i].av_flow) + "\t" + str(costFunction(False,
+                                                               network.mixLinkSet[i].fft,
+                                                               network.mixLinkSet[i].alpha,
+                                                               network.mixLinkSet[i].av_flow,
+                                                               network.mixLinkSet[i].capacity,
+                                                               network.mixLinkSet[i].beta,
+                                                               network.mixLinkSet[i].length,
+                                                            #    network.linkSet[i].speedLimit
+                                                               )) + "\t" +str(
+            network.mixLinkSet[i].cv_flow) + "\t" + str(costFunction(False,
+                                                               network.mixLinkSet[i].fft,
+                                                               network.mixLinkSet[i].alpha,
+                                                               network.mixLinkSet[i].cv_flow,
+                                                               network.mixLinkSet[i].capacity,
+                                                               network.mixLinkSet[i].beta,
+                                                               network.mixLinkSet[i].length,
+                                                                ))
+
         outFile.write(tmpOut + "\n")
     outFile.close()
 
@@ -725,11 +758,13 @@ def computeAssingment(net_file: str,
     if results_file is None:
         results_file = '_'.join(net_file.split("_")[:-1] + ["flow.tntp"])
 
-    # writeResults(network=network,
-    #              output_file=results_file,
-    #              costFunction=costFunction,
-    #              systemOptimal=systemOptimal,
-    #              verbose=verbose)
+    writeResults(network=network,
+                 output_file=results_file,
+                 costFunction=costFunction,
+                 systemOptimal=systemOptimal,
+                 verbose=verbose,
+                 AV_TSTT=AV_TSTT,
+                 CV_TSTT=CV_TSTT)
 
     return CV_TSTT, AV_TSTT
 
@@ -738,8 +773,9 @@ if __name__ == '__main__':
 
     # This is an example usage for calculating System Optimal and User Equilibrium with Frank-Wolfe
 
-    net_file = str(PathUtils.chicago_net_file)
+    # net_file = str(PathUtils.chicago_net_file)
     # net_file = str(PathUtils.braess_net_file)
+    net_file = str(PathUtils.test_net_file)
     # total_system_travel_time_optimal = computeAssingment(net_file=net_file,
     #                                                      algorithm="FW",
     #                                                      costFunction=BPRcostFunction,
@@ -754,7 +790,7 @@ if __name__ == '__main__':
                                                              costFunction=BPRcostFunction,
                                                              systemOptimal=False,
                                                              verbose=True,
-                                                             accuracy=0.01,
+                                                             accuracy=0.0001,
                                                              maxIter=1000,
                                                              maxTime=60000)
     print("total_cv_travel_time_equilibrium: ", total_cv_travel_time_equilibrium)

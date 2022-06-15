@@ -26,6 +26,7 @@ class PathUtils:
     eastern_massachusetts_net_file = input_networks_folder / "EMA_net.tntp"
     sioux_falls_net_file = input_networks_folder / "SiouxFalls_net.tntp"
     winnipeg_net_file = input_networks_folder / "Winnipeg_net.tntp"
+    test_net_file = input_networks_folder / "Test_net.tntp"
 
 
 
