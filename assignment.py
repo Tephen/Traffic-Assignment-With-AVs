@@ -1,4 +1,5 @@
 import math
+from mimetypes import init
 import time
 import heapq
 import networkx as nx
@@ -27,7 +28,7 @@ class FlowTransportNetwork:
         self.originZones = {}
 
         #自动驾驶流量比例
-        self.avRate = 0.05
+        self.avRate = 0.25
         self.hav = 1.0
         self.hcv = 1.8
         # self.networkx_graph = None
@@ -99,7 +100,7 @@ class Link:
                  speed_limit: float,
                 #  toll: float,
                 #  linkType,
-                 lane_num = 0
+                 lane_num :int
                  ):
         self.init_node = init_node
         self.term_node = term_node
@@ -134,7 +135,8 @@ class Link:
         self.flow = 0.0
         # self.cost = self.fft
         # 0车道时cost设为无穷大
-        self.cost = np.finfo(np.float32).max
+        # self.cost = np.finfo(np.float32).max
+        self.cost = 1e+30
 
 
 class MixLink:
@@ -153,7 +155,7 @@ class MixLink:
                  speed_limit: float,
                 #  toll: float,
                 #  linkType,
-                 lane_num = 4
+                 lane_num :int
                  ):
         self.init_node = init_node
         self.term_node = term_node
@@ -201,6 +203,15 @@ class Demand:
         self.toNode = term_node
         self.demand = float(demand)
 
+
+def DeployOneLane(origin, destination, network: FlowTransportNetwork):
+    if(network.mixLinkSet[(origin, destination)].lane_num < 1):
+        print(f"No lane on {origin}--{destination}")
+        return
+    else:
+        network.mixLinkSet[(origin, destination)].lane_num -= 1
+        network.linkSet[(origin, destination)].lane_num += 1
+        return
 # Dijkstra算法求解origin到路网中其他节点的最短(用时)路径, origin到s的最短用时存储在s.label中
 def DijkstraHeap(origin, network: FlowTransportNetwork):
     """
@@ -246,11 +257,11 @@ def DijkstraHeap(origin, network: FlowTransportNetwork):
 
     # heapq按照元组的第一个元素排序成为小顶堆
     # 以origin节点作为初始当前节点
-    SE = [(0, origin)]
+    SEA = [(0, origin)]
     # SE中保存当前迭代轮次中待被选取的最短距离及相应节点
-    while SE:
+    while SEA:
         # 每次取当前到origin最短距离最短点作为当前节点
-        currentNode = heapq.heappop(SE)[1]
+        currentNode = heapq.heappop(SEA)[1]
         # currentLabel 表示源节点到当前节点的最短距离
         currentLabel = network.nodeSet[currentNode].AVLabel
         # 对当前节点直接连接到的每个节点,更新其到origin的最短距离
@@ -262,15 +273,23 @@ def DijkstraHeap(origin, network: FlowTransportNetwork):
             # 到origin的最短距离并更新newNode的前驱节点为currentNode
             existingLabel = network.nodeSet[newNode].AVLabel
             if network.mixLinkSet[link].cost < network.linkSet[link].cost:
-                network.nodeSet[newNode].linkType = MIX_LINK
                 newLabel = currentLabel + network.mixLinkSet[link].cost
+                if newLabel < existingLabel:
+                    network.nodeSet[newNode].linkType = MIX_LINK
+                    heapq.heappush(SEA, (newLabel, newNode))
+                    network.nodeSet[newNode].AVLabel = newLabel
+                    network.nodeSet[newNode].AVPred = newPred
             else:
-                network.nodeSet[newNode].linkType = AV_LINK
                 newLabel = currentLabel + network.linkSet[link].cost
-            if newLabel < existingLabel:
-                heapq.heappush(SE, (newLabel, newNode))
-                network.nodeSet[newNode].AVLabel = newLabel
-                network.nodeSet[newNode].AVPred = newPred
+                if newLabel < existingLabel:
+                    network.nodeSet[newNode].linkType = AV_LINK
+                    heapq.heappush(SEA, (newLabel, newNode))
+                    network.nodeSet[newNode].AVLabel = newLabel
+                    network.nodeSet[newNode].AVPred = newPred
+            # if newLabel < existingLabel:
+            #     heapq.heappush(SEA, (newLabel, newNode))
+            #     network.nodeSet[newNode].AVLabel = newLabel
+            #     network.nodeSet[newNode].AVPred = newPred
 
 # 计算某一link的t
 def BPRcostFunction(optimal: bool,
@@ -283,8 +302,8 @@ def BPRcostFunction(optimal: bool,
                     # maxSpeed: float
                     ) -> float:
     if capacity < 1e-3:
-        return np.finfo(np.float32).max
-        # return 100000.0
+        # return np.finfo(np.float32).max
+        return 1e+30
     if optimal:
         return fft * (1 + (alpha * math.pow((flow * 1.0 / capacity), beta)) * (beta + 1))
     return fft * (1 + alpha * math.pow((flow * 1.0 / capacity), beta))
@@ -307,6 +326,7 @@ def updateTravelTime(network: FlowTransportNetwork, optimal: bool = False, costF
                                                network.linkSet[l].length,
                                             #    network.linkSet[l].speedLimit
                                                )
+        # network.linkSet[l].cost = round(network.linkSet[l].cost, 2)
     
     for l in network.mixLinkSet:
         # 仅当车道上车流量达到最低限度时更新车道的capacity和相应的cost time
@@ -323,6 +343,7 @@ def updateTravelTime(network: FlowTransportNetwork, optimal: bool = False, costF
                                                network.mixLinkSet[l].length,
                                             #    network.linkSet[l].speedLimit
                                                )
+        # network.mixLinkSet[l].cost = round(network.mixLinkSet[l].cost, 2)
         # network.mixLinkSet[l].cv_cost = network.mixLinkSet[l].av_cost
         # network.mixLinkSet[l].cv_cost = costFunction(optimal,
         #                                        network.mixLinkSet[l].fft,
@@ -342,6 +363,7 @@ def tracePreds(dest, network: FlowTransportNetwork):
     """
     返回两个值,cvSpLinks和avSpLinks
     分别表示cv和av在网络中的最短路径,avSpLinks列表中的第二项表示路径类型
+    0代表AV专用车道,1代表混合车道
     """
     avDest = cvDest = dest
     cvPrevNode = network.nodeSet[cvDest].CVPred
@@ -402,6 +424,12 @@ def loadAON(network: FlowTransportNetwork, computeXbar: bool = True):
             # 进行全1分配
             if computeXbar and r != s:
                 cvSpLinks, avSpLinks = tracePreds(s, network)
+                print(f'OD对{r}-->{s}之间cv与av的最短路径')
+                print("0--AV专用车道  1--混合车道")
+                print("cvSpLinks")
+                print(cvSpLinks)
+                print("avSpLinks")
+                print(avSpLinks)
                 for spLink in cvSpLinks:
                     mix_link_x_bar[spLink][0] = mix_link_x_bar[spLink][0] + cv_dem
                 for spLink in avSpLinks:
@@ -419,7 +447,7 @@ def loadAON(network: FlowTransportNetwork, computeXbar: bool = True):
 # 将demand读入到network的tripSet
 def readDemand(demand_df: pd.DataFrame, network: FlowTransportNetwork):
     for index, row in demand_df.iterrows():
-
+        # print(row)
         init_node = str(int(row["init_node"]))
         term_node = str(int(row["term_node"]))
         demand = row["demand"]
@@ -438,7 +466,8 @@ def readDemand(demand_df: pd.DataFrame, network: FlowTransportNetwork):
 
 def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
     for index, row in network_df.iterrows():
-
+        print(row)
+        print(type(row))
         init_node = str(int(row["init_node"]))
         term_node = str(int(row["term_node"]))
         capacity = row["capacity"]
@@ -447,32 +476,67 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
         b = row["b"]
         power = row["power"]
         speed = row["speed"]
-        # toll = row["toll"]
+        # lane_num = row["link_type"]
+        # lane_num = int(row["lane_num"])
+        # print(row["lane_num"])
+        lane_num = int(row["lane_num"])
         # link_type = row["link_type"]
-
+        # if (init_node == "10" and term_node == "11") or (init_node == "13" and term_node == "16"):
+        #     network.linkSet[init_node, term_node] = Link(init_node=init_node,
+        #                                              term_node=term_node,
+        #                                              capacity=capacity,
+        #                                              length=length,
+        #                                              fft=free_flow_time,
+        #                                              b=1.2, # alpha
+        #                                              power=5, # belta
+        #                                              speed_limit=speed,
+        #                                              lane_num=1
+        #                                             #  toll=toll,
+        #                                             #  linkType=link_type
+        #                                              )
+        # else:
         network.linkSet[init_node, term_node] = Link(init_node=init_node,
-                                                     term_node=term_node,
-                                                     capacity=capacity,
-                                                     length=length,
-                                                     fft=free_flow_time,
-                                                     b=1.2, # alpha
-                                                     power=5, # belta
-                                                     speed_limit=speed,
+                                                    term_node=term_node,
+                                                    capacity=capacity,
+                                                    length=length,
+                                                    fft=free_flow_time,
+                                                    b=1.2, # alpha
+                                                    power=5, # belta
+                                                    speed_limit=speed,
+                                                    lane_num=(4-lane_num)
                                                     #  toll=toll,
                                                     #  linkType=link_type
-                                                     )
+                                                    )
+        # network.linkSet[[str(10), str(11)]].lane_num = 1
+        # network.linkSet[str(13), str(16)].lane_num = 1
+        # if (init_node == "10" and term_node == "11") or (init_node == "13" and term_node == "16"):
+        #     network.mixLinkSet[init_node, term_node] = MixLink(init_node=init_node,
+        #                                              term_node=term_node,
+        #                                              capacity=capacity,
+        #                                              length=length,
+        #                                              fft=free_flow_time,
+        #                                              b=1.2, # alpha
+        #                                              power=5, # belta
+        #                                              speed_limit=speed,
+        #                                              lane_num=3
+        #                                             #  toll=toll,
+        #                                             #  linkType=link_type
+        #                                              )
+        # else:
         network.mixLinkSet[init_node, term_node] = MixLink(init_node=init_node,
-                                                     term_node=term_node,
-                                                     capacity=capacity,
-                                                     length=length,
-                                                     fft=free_flow_time,
-                                                     b=1.2, # alpha
-                                                     power=5, # belta
-                                                     speed_limit=speed,
+                                                    term_node=term_node,
+                                                    capacity=capacity,
+                                                    length=length,
+                                                    fft=free_flow_time,
+                                                    b=1.2, # alpha
+                                                    power=5, # belta
+                                                    speed_limit=speed,
+                                                    lane_num=lane_num
                                                     #  toll=toll,
                                                     #  linkType=link_type
-                                                     )
-
+                                                    )
+        # network.linkSet[str(10), str(11)].lane_num = 3
+        # network.linkSet[str(13), str(16)].lane_num = 4
         if init_node not in network.nodeSet:
             network.nodeSet[init_node] = Node(init_node)
         if term_node not in network.nodeSet:
@@ -535,8 +599,16 @@ def assignment_loop(network: FlowTransportNetwork,
     while gap > accuracy:
         # x_bar为新分配的link flow
         # Get x_bar throug all-or-nothing assignment
+        print(f"{iteration_number}th mix travel time")
+        print([network.mixLinkSet[a].cost for a in network.mixLinkSet])
+        print(f"{iteration_number}th av travel time")
+        print([network.linkSet[a].cost for a in network.linkSet])
         _, mix_x_bar, av_x_bar = loadAON(network=network)
-
+        print("mix_x_bar")
+        print(mix_x_bar)
+        print("########################")
+        print("av_x_bar")
+        print(av_x_bar)
         # if algorithm == "MSA" or iteration_number == 1:
             # alpha = (1 / iteration_number)
         alpha = (1 / iteration_number)
@@ -566,12 +638,19 @@ def assignment_loop(network: FlowTransportNetwork,
         # Compute the relative gap
         SPTT, _, _ = loadAON(network=network, computeXbar=False)
         SPTT = round(SPTT, 3)
+        print(f"SPTT:{SPTT}")
 
         
         CV_TSTT = round(sum([network.mixLinkSet[a].cv_flow * network.mixLinkSet[a].cost for a in 
                             network.mixLinkSet]), 3)
-        AV_TSTT = round((sum([network.linkSet[a].flow * network.linkSet[a].cost for a in network.linkSet]) 
+        AV_TSTT = round((sum([network.linkSet[a].flow * network.linkSet[a].cost for a in network.linkSet])  
                         + sum([network.mixLinkSet[b].av_flow * network.mixLinkSet[b].cost for b in network.mixLinkSet])), 3)
+        print("CV_TSTT:")
+        print(CV_TSTT)
+        print("AV_TSTT:")
+        print(AV_TSTT)
+        print("")
+        print("")
         TSTT = CV_TSTT + AV_TSTT
         # TSTT = round(sum([network.linkSet[a].flow * network.linkSet[a].cost for a in
         #                   network.linkSet]), 9)
@@ -693,7 +772,8 @@ def load_network(net_file: str,
         demand_file,
         force_reprocess=force_net_reprocess
     )
-
+    print("net_df")
+    print(net_df)
     # cv_network = FlowTransportNetwork()
     # av_network = FlowTransportNetwork()
     network = FlowTransportNetwork()
@@ -749,6 +829,8 @@ def computeAssingment(net_file: str,
     """
 
     network = load_network(net_file=net_file, demand_file=demand_file, verbose=verbose, force_net_reprocess=force_net_reprocess)
+    # DeployOneLane('13', '16', network)
+    # DeployOneLane('10', '11', network)
 
     if verbose:
         print("Computing assignment...")
@@ -768,6 +850,27 @@ def computeAssingment(net_file: str,
 
     return TSTT
 
+
+def deploy_loop(network: FlowTransportNetwork,
+                    # algorithm: str = "FW",
+                    systemOptimal: bool = False,
+                    costFunction=BPRcostFunction,
+                    accuracy: float = 0.001,
+                    maxIter: int = 1000,
+                    maxTime: int = 60,
+                    verbose: bool = True):
+    """
+    部署一条新的AV车道
+    """
+    no_more_av = False
+
+    while not no_more_av:
+        # 当混合链路存在不止一条车道时,仍可继续进行deploy
+        for mix_l in network.mixLinkSet:
+            if network.mixLinkSet[mix_l].lane_num > 1:
+                no_more_av = False
+                break
+        # 检查AV车道总长度限制
 
 if __name__ == '__main__':
 
@@ -790,8 +893,8 @@ if __name__ == '__main__':
                                                              costFunction=BPRcostFunction,
                                                              systemOptimal=False,
                                                              verbose=True,
-                                                             accuracy=0.001,
-                                                             maxIter=5,
+                                                             accuracy=0.0001,
+                                                             maxIter=500,
                                                              maxTime=60000)
     print("total_travel_time_equilibrium: ", total_travel_time_equilibrium)
     # print("total_av_travel_time_equilibrium: ", total_av_travel_time_equilibrium)
