@@ -19,7 +19,7 @@ MIX_LINK = 1
 class FlowTransportNetwork:
 
     def __init__(self):
-        self.linkSet = {}
+        self.avLinkSet = {}
         self.mixLinkSet = {}
         self.nodeSet = {}
 
@@ -27,25 +27,29 @@ class FlowTransportNetwork:
         self.zoneSet = {}
         self.originZones = {}
 
-        #自动驾驶流量比例
+        # 自动驾驶流量比例
         self.avRate = 0.25
+        # 自动驾驶车道长度限制
+        self.avLengthLimit = 0.3
         self.hav = 1.0
         self.hcv = 1.8
+        self.avLinkTotalLength = 0.0
+        self.linkTotalLength = 0.0
         # self.networkx_graph = None
 
     # def to_networkx(self):
     #     if self.networkx_graph is None:
-    #         self.networkx_graph = nx.DiGraph([(int(begin),int(end)) for (begin,end) in self.linkSet.keys()])
+    #         self.networkx_graph = nx.DiGraph([(int(begin),int(end)) for (begin,end) in self.avLinkSet.keys()])
     #     return self.networkx_graph
 
     def reset_flow(self):
-        for link in self.linkSet.values():
+        for link in self.avLinkSet.values():
             link.reset_flow()
         for mixLink in self.mixLinkSet.values():
             mixLink.reset_flow()
 
     def reset(self):
-        for link in self.linkSet.values():
+        for link in self.avLinkSet.values():
             link.reset()
         for mixLink in self.mixLinkSet.values():
             mixLink.reset()
@@ -210,7 +214,7 @@ def DeployOneLane(origin, destination, network: FlowTransportNetwork):
         return
     else:
         network.mixLinkSet[(origin, destination)].lane_num -= 1
-        network.linkSet[(origin, destination)].lane_num += 1
+        network.avLinkSet[(origin, destination)].lane_num += 1
         return
 # Dijkstra算法求解origin到路网中其他节点的最短(用时)路径, origin到s的最短用时存储在s.label中
 def DijkstraHeap(origin, network: FlowTransportNetwork):
@@ -272,7 +276,7 @@ def DijkstraHeap(origin, network: FlowTransportNetwork):
             # 若将currentNode作为newNode的前驱节点情况下newNode到origin的距离更短,则更新newNode
             # 到origin的最短距离并更新newNode的前驱节点为currentNode
             existingLabel = network.nodeSet[newNode].AVLabel
-            if network.mixLinkSet[link].cost < network.linkSet[link].cost:
+            if network.mixLinkSet[link].cost < network.avLinkSet[link].cost:
                 newLabel = currentLabel + network.mixLinkSet[link].cost
                 if newLabel < existingLabel:
                     network.nodeSet[newNode].linkType = MIX_LINK
@@ -280,7 +284,7 @@ def DijkstraHeap(origin, network: FlowTransportNetwork):
                     network.nodeSet[newNode].AVLabel = newLabel
                     network.nodeSet[newNode].AVPred = newPred
             else:
-                newLabel = currentLabel + network.linkSet[link].cost
+                newLabel = currentLabel + network.avLinkSet[link].cost
                 if newLabel < existingLabel:
                     network.nodeSet[newNode].linkType = AV_LINK
                     heapq.heappush(SEA, (newLabel, newNode))
@@ -314,19 +318,19 @@ def updateTravelTime(network: FlowTransportNetwork, optimal: bool = False, costF
     """
     This method updates the travel time on the links with the current flow
     """
-    for l in network.linkSet:
+    for l in network.avLinkSet:
         ra = 1.0
-        network.linkSet[l].capacity = (3600.0 / (network.hav * ra)) * network.linkSet[l].lane_num
-        network.linkSet[l].cost = costFunction(optimal,
-                                               network.linkSet[l].fft,
-                                               network.linkSet[l].alpha,
-                                               network.linkSet[l].flow,
-                                               network.linkSet[l].capacity,
-                                               network.linkSet[l].beta,
-                                               network.linkSet[l].length,
-                                            #    network.linkSet[l].speedLimit
+        network.avLinkSet[l].capacity = (3600.0 / (network.hav * ra)) * network.avLinkSet[l].lane_num
+        network.avLinkSet[l].cost = costFunction(optimal,
+                                               network.avLinkSet[l].fft,
+                                               network.avLinkSet[l].alpha,
+                                               network.avLinkSet[l].flow,
+                                               network.avLinkSet[l].capacity,
+                                               network.avLinkSet[l].beta,
+                                               network.avLinkSet[l].length,
+                                            #    network.avLinkSet[l].speedLimit
                                                )
-        # network.linkSet[l].cost = round(network.linkSet[l].cost, 2)
+        # network.avLinkSet[l].cost = round(network.avLinkSet[l].cost, 2)
     
     for l in network.mixLinkSet:
         # 仅当车道上车流量达到最低限度时更新车道的capacity和相应的cost time
@@ -341,7 +345,7 @@ def updateTravelTime(network: FlowTransportNetwork, optimal: bool = False, costF
                                                network.mixLinkSet[l].capacity,
                                                network.mixLinkSet[l].beta,
                                                network.mixLinkSet[l].length,
-                                            #    network.linkSet[l].speedLimit
+                                            #    network.avLinkSet[l].speedLimit
                                                )
         # network.mixLinkSet[l].cost = round(network.mixLinkSet[l].cost, 2)
         # network.mixLinkSet[l].cv_cost = network.mixLinkSet[l].av_cost
@@ -352,7 +356,7 @@ def updateTravelTime(network: FlowTransportNetwork, optimal: bool = False, costF
         #                                        network.mixLinkSet[l].capacity,
         #                                        network.mixLinkSet[l].beta,
         #                                        network.mixLinkSet[l].length,
-        #                                     #    network.linkSet[l].speedLimit
+        #                                     #    network.avLinkSet[l].speedLimit
         #                                        )
 
 
@@ -397,7 +401,7 @@ def loadAON(network: FlowTransportNetwork, computeXbar: bool = True):
     This method produces auxiliary flows for all or nothing loading.
     """
     # av_link_x_bar为进行全1分配后av专用车道上的av流量字典
-    av_link_x_bar = {l: 0.0 for l in network.linkSet}
+    av_link_x_bar = {l: 0.0 for l in network.avLinkSet}
     # mix_link_x_bar为进行全1分配后mix车道上,两种流量的字典,第一个值表示cv流量,第二个值表示av流量
     mix_link_x_bar = {l: [0.0, 0.0] for l in network.mixLinkSet}
     # x_av_bar = {l: 0.0 for l in network.mixLinkSet}
@@ -466,8 +470,8 @@ def readDemand(demand_df: pd.DataFrame, network: FlowTransportNetwork):
 
 def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
     for index, row in network_df.iterrows():
-        print(row)
-        print(type(row))
+        # print(row)
+        # print(type(row))
         init_node = str(int(row["init_node"]))
         term_node = str(int(row["term_node"]))
         capacity = row["capacity"]
@@ -480,9 +484,12 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
         # lane_num = int(row["lane_num"])
         # print(row["lane_num"])
         lane_num = int(row["lane_num"])
+        network.avLinkTotalLength += length * (4 - lane_num)
+        network.linkTotalLength += length * 4
+
         # link_type = row["link_type"]
         # if (init_node == "10" and term_node == "11") or (init_node == "13" and term_node == "16"):
-        #     network.linkSet[init_node, term_node] = Link(init_node=init_node,
+        #     network.avLinkSet[init_node, term_node] = Link(init_node=init_node,
         #                                              term_node=term_node,
         #                                              capacity=capacity,
         #                                              length=length,
@@ -495,7 +502,7 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
         #                                             #  linkType=link_type
         #                                              )
         # else:
-        network.linkSet[init_node, term_node] = Link(init_node=init_node,
+        network.avLinkSet[init_node, term_node] = Link(init_node=init_node,
                                                     term_node=term_node,
                                                     capacity=capacity,
                                                     length=length,
@@ -507,8 +514,8 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
                                                     #  toll=toll,
                                                     #  linkType=link_type
                                                     )
-        # network.linkSet[[str(10), str(11)]].lane_num = 1
-        # network.linkSet[str(13), str(16)].lane_num = 1
+        # network.avLinkSet[[str(10), str(11)]].lane_num = 1
+        # network.avLinkSet[str(13), str(16)].lane_num = 1
         # if (init_node == "10" and term_node == "11") or (init_node == "13" and term_node == "16"):
         #     network.mixLinkSet[init_node, term_node] = MixLink(init_node=init_node,
         #                                              term_node=term_node,
@@ -535,8 +542,8 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
                                                     #  toll=toll,
                                                     #  linkType=link_type
                                                     )
-        # network.linkSet[str(10), str(11)].lane_num = 3
-        # network.linkSet[str(13), str(16)].lane_num = 4
+        # network.avLinkSet[str(10), str(11)].lane_num = 3
+        # network.avLinkSet[str(13), str(16)].lane_num = 4
         if init_node not in network.nodeSet:
             network.nodeSet[init_node] = Node(init_node)
         if term_node not in network.nodeSet:
@@ -547,28 +554,28 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
             network.nodeSet[term_node].inLinks.append(init_node)
 
     print(len(network.nodeSet), "nodes")
-    print(len(network.linkSet), "links")
+    print(len(network.avLinkSet), "links")
 
 
 def get_TSTT(network: FlowTransportNetwork, costFunction=BPRcostFunction, use_max_capacity: bool = True):
-    TSTT = round(sum([network.linkSet[a].flow * costFunction(optimal=False,
-                                                             fft=network.linkSet[
+    TSTT = round(sum([network.avLinkSet[a].flow * costFunction(optimal=False,
+                                                             fft=network.avLinkSet[
                                                                  a].fft,
-                                                             alpha=network.linkSet[
+                                                             alpha=network.avLinkSet[
                                                                  a].alpha,
-                                                             flow=network.linkSet[
+                                                             flow=network.avLinkSet[
                                                                  a].flow,
-                                                             capacity=network.linkSet[
-                                                                 a].max_capacity if use_max_capacity else network.linkSet[
+                                                             capacity=network.avLinkSet[
+                                                                 a].max_capacity if use_max_capacity else network.avLinkSet[
                                                                  a].capacity,
-                                                             beta=network.linkSet[
+                                                             beta=network.avLinkSet[
                                                                  a].beta,
-                                                             length=network.linkSet[
+                                                             length=network.avLinkSet[
                                                                  a].length,
-                                                            #  maxSpeed=network.linkSet[
+                                                            #  maxSpeed=network.avLinkSet[
                                                             #      a].speedLimit
                                                              ) for a in
-                      network.linkSet]), 3)
+                      network.avLinkSet]), 3)
     return TSTT
 
 
@@ -602,7 +609,7 @@ def assignment_loop(network: FlowTransportNetwork,
         print(f"{iteration_number}th mix travel time")
         print([network.mixLinkSet[a].cost for a in network.mixLinkSet])
         print(f"{iteration_number}th av travel time")
-        print([network.linkSet[a].cost for a in network.linkSet])
+        print([network.avLinkSet[a].cost for a in network.avLinkSet])
         _, mix_x_bar, av_x_bar = loadAON(network=network)
         print("mix_x_bar")
         print(mix_x_bar)
@@ -624,8 +631,8 @@ def assignment_loop(network: FlowTransportNetwork,
         #     raise TypeError('Algorithm must be MSA or FW')
 
         # Apply flow improvement
-        for l in network.linkSet:
-            network.linkSet[l].flow = alpha * av_x_bar[l] + (1 - alpha) * network.linkSet[l].flow
+        for l in network.avLinkSet:
+            network.avLinkSet[l].flow = alpha * av_x_bar[l] + (1 - alpha) * network.avLinkSet[l].flow
         for l in network.mixLinkSet:
             network.mixLinkSet[l].av_flow = alpha * mix_x_bar[l][1] + (1 - alpha) * network.mixLinkSet[l].av_flow
             network.mixLinkSet[l].cv_flow = alpha * mix_x_bar[l][0] + (1 - alpha) * network.mixLinkSet[l].cv_flow 
@@ -643,7 +650,7 @@ def assignment_loop(network: FlowTransportNetwork,
         
         CV_TSTT = round(sum([network.mixLinkSet[a].cv_flow * network.mixLinkSet[a].cost for a in 
                             network.mixLinkSet]), 3)
-        AV_TSTT = round((sum([network.linkSet[a].flow * network.linkSet[a].cost for a in network.linkSet])  
+        AV_TSTT = round((sum([network.avLinkSet[a].flow * network.avLinkSet[a].cost for a in network.avLinkSet])  
                         + sum([network.mixLinkSet[b].av_flow * network.mixLinkSet[b].cost for b in network.mixLinkSet])), 3)
         print("CV_TSTT:")
         print(CV_TSTT)
@@ -652,10 +659,10 @@ def assignment_loop(network: FlowTransportNetwork,
         print("")
         print("")
         TSTT = CV_TSTT + AV_TSTT
-        # TSTT = round(sum([network.linkSet[a].flow * network.linkSet[a].cost for a in
-        #                   network.linkSet]), 9)
+        # TSTT = round(sum([network.avLinkSet[a].flow * network.avLinkSet[a].cost for a in
+        #                   network.avLinkSet]), 9)
 
-        # print(TSTT, SPTT, "TSTT, SPTT, Max capacity", max([l.capacity for l in network.linkSet.values()]))
+        # print(TSTT, SPTT, "TSTT, SPTT, Max capacity", max([l.capacity for l in network.avLinkSet.values()]))
         # gap = (TSTT / SPTT) - 1
         # av_gap = (AV_TSTT / AV_SPTT) - 1
         # cv_gap = (CV_TSTT / CV_SPTT) - 1
@@ -666,8 +673,8 @@ def assignment_loop(network: FlowTransportNetwork,
 
             # Uncomment for debug
 
-            # print("Capacities:", [l.capacity for l in network.linkSet.values()])
-            # print("Flows:", [l.flow for l in network.linkSet.values()])
+            # print("Capacities:", [l.capacity for l in network.avLinkSet.values()])
+            # print("Flows:", [l.flow for l in network.avLinkSet.values()])
 
         # Compute the real total travel time (which in the case of system optimal rounting is different from the TSTT above)
         # TSTT = get_TSTT(network=network, costFunction=costFunction)
@@ -717,17 +724,17 @@ def writeResults(network: FlowTransportNetwork, output_file: str, TSTT: float, c
     outFile.write(tmpOut + "\n")
     tmpOut = "init_node\tterm_node\tflow\ttravelTime"
     outFile.write(tmpOut + "\n")
-    for i in network.linkSet:
-        tmpOut = str(network.linkSet[i].init_node) + "\t" + str(
-            network.linkSet[i].term_node) + "\t" + str(
-            network.linkSet[i].flow) + "\t" + str(costFunction(False,
-                                                               network.linkSet[i].fft,
-                                                               network.linkSet[i].alpha,
-                                                               network.linkSet[i].flow,
-                                                               network.linkSet[i].capacity,
-                                                               network.linkSet[i].beta,
-                                                               network.linkSet[i].length,
-                                                            #    network.linkSet[i].speedLimit
+    for i in network.avLinkSet:
+        tmpOut = str(network.avLinkSet[i].init_node) + "\t" + str(
+            network.avLinkSet[i].term_node) + "\t" + str(
+            network.avLinkSet[i].flow) + "\t" + str(costFunction(False,
+                                                               network.avLinkSet[i].fft,
+                                                               network.avLinkSet[i].alpha,
+                                                               network.avLinkSet[i].flow,
+                                                               network.avLinkSet[i].capacity,
+                                                               network.avLinkSet[i].beta,
+                                                               network.avLinkSet[i].length,
+                                                            #    network.avLinkSet[i].speedLimit
                                                                ))
         outFile.write(tmpOut + "\n")
 
@@ -772,8 +779,8 @@ def load_network(net_file: str,
         demand_file,
         force_reprocess=force_net_reprocess
     )
-    print("net_df")
-    print(net_df)
+    # print("net_df")
+    # print(net_df)
     # cv_network = FlowTransportNetwork()
     # av_network = FlowTransportNetwork()
     network = FlowTransportNetwork()
@@ -862,15 +869,23 @@ def deploy_loop(network: FlowTransportNetwork,
     """
     部署一条新的AV车道
     """
-    no_more_av = False
-
-    while not no_more_av:
-        # 当混合链路存在不止一条车道时,仍可继续进行deploy
+    # 1. 求解UE问题
+    more_av = True
+    candidateSet = {}
+    while  more_av:
+        # 2. 构建可选部署AV车道集合
+    
         for mix_l in network.mixLinkSet:
+            # 当混合链路存在不止一条车道时,仍可继续进行deploy
             if network.mixLinkSet[mix_l].lane_num > 1:
                 no_more_av = False
                 break
-        # 检查AV车道总长度限制
+            # 当存在至少一条车道仍可添加后不超出长度限制时,仍可继续进行deploy
+            if (network.mixLinkSet[mix_l].length + network.avLinkTotalLength) / network.linkTotalLength < network.avLengthLimit:
+                no_more_av = False
+                break 
+    # 3. 计算最小顺时时间变化
+    # 4. 部署一条AV车道并回到1   
 
 if __name__ == '__main__':
 
