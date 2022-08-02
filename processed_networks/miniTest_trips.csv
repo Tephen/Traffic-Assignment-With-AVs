@@ -1,0 +1,5 @@
+init_node	term_node	demand
+5	8	1000
+5	10	2000
+6	8	1000
+6	10	2000

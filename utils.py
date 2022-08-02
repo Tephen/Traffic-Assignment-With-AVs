@@ -27,6 +27,7 @@ class PathUtils:
     sioux_falls_net_file = input_networks_folder / "SiouxFalls_net.tntp"
     winnipeg_net_file = input_networks_folder / "Winnipeg_net.tntp"
     test_net_file = input_networks_folder / "Test_net.tntp"
+    mini_test_net_file = input_networks_folder / "miniTest_net.tntp"
 
 
 
