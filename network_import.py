@@ -17,8 +17,15 @@ def import_network(network_file: str, demand_file: str, force_reprocess: bool = 
     :return: None
     """
 
-    network_file_csv = network_file.split(".")[0].split("/")[-1] + ".csv"
-    demand_file_csv = demand_file.split(".")[0].split("/")[-1] + ".csv"
+    import sys
+    #windows系統
+    if sys.platform.startswith('win'):
+        network_file_csv = network_file.split(".")[0].split("\\")[-1] + ".csv"
+        demand_file_csv = demand_file.split(".")[0].split("\\")[-1] + ".csv"
+    else:
+        network_file_csv = network_file.split(".")[0].split("/")[-1] + ".csv"
+        demand_file_csv = demand_file.split(".")[0].split("/")[-1] + ".csv"
+    
 
     network_file_csv = PathUtils.processed_networks_folder / network_file_csv
     demand_file_csv = PathUtils.processed_networks_folder / demand_file_csv

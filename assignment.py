@@ -700,12 +700,12 @@ def assignment_loop(network: FlowTransportNetwork,
     while gap > accuracy:
         # x_bar为新分配的link flow
         # Get x_bar throug all-or-nothing assignment
-        # print(f"{iteration_number}th mix travel time")
-        # print([network.mixLinkSet[a].cost for a in network.mixLinkSet])
+        print(f"{iteration_number}th mix travel time")
+        print([network.mixLinkSet[a].cost for a in network.mixLinkSet])
         # print(f"{iteration_number}th av travel time")
         # print([network.avLinkSet[a].cost for a in network.avLinkSet])
         _, mix_x_bar, av_x_bar = loadAON(network=network)
-        # print("mix_x_bar")
+        print("mix_x_bar")
         # print(mix_x_bar)
         # print("########################")
         # print("av_x_bar")
@@ -877,7 +877,11 @@ def load_network(net_file: str,
     if demand_file is None:
         demand_file = '_'.join(net_file.split("_")[:-1] + ["trips.tntp"])
 
-    net_name = net_file.split("/")[-1].split("_")[0]
+    import sys
+    if sys.platform.startswith('win'):
+        net_name = net_file.split("\\")[-1].split("_")[0]
+    else:
+        net_name = net_file.split("/")[-1].split("_")[0]
 
     if verbose:
         print(f"Loading network {net_name}...")
@@ -1049,6 +1053,7 @@ if __name__ == '__main__':
     # This is an example usage for calculating System Optimal and User Equilibrium with Frank-Wolfe
 
     net_file = str(PathUtils.chicago_net_file)
+    print(net_file)
     # net_file = str(PathUtils.braess_net_file)
     # net_file = str(PathUtils.test_net_file)
     # net_file = str(PathUtils.mini_test_net_file)
