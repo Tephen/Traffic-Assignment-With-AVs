@@ -11,12 +11,15 @@ import warnings
 from network_import import *
 from utils import PathUtils
 
+import csv
+
 warnings.filterwarnings('ignore', 'The iteration is not making good progress')
 
 # For linkType
 AV_LINK = 0
 MIX_LINK = 1
 
+# 不同部署阶段对应的avRate和avLengthLimit
 deployStage =\
 {
     0 : [0.05, 0],
@@ -139,12 +142,6 @@ class Link:
         self.flow = 0.0
         self.cost = self.fft
 
-    # Method not used for assignment
-    # def modify_capacity(self, delta_percentage: float):
-    #     assert -1 <= delta_percentage <= 1
-    #     self.curr_capacity_percentage += delta_percentage
-    #     self.curr_capacity_percentage = max(0, min(1, self.curr_capacity_percentage))
-    #     self.capacity = self.max_capacity * self.curr_capacity_percentage
 
     def reset(self):
         # self.curr_capacity_percentage = 1
@@ -196,12 +193,6 @@ class MixLink:
         self.cost = self.fft
         # self.cv_cost = self.fft
 
-    # Method not used for assignment
-    # def modify_capacity(self, delta_percentage: float):
-    #     assert -1 <= delta_percentage <= 1
-    #     self.curr_capacity_percentage += delta_percentage
-    #     self.curr_capacity_percentage = max(0, min(1, self.curr_capacity_percentage))
-    #     self.capacity = self.max_capacity * self.curr_capacity_percentage
 
     def reset(self):
         # self.curr_capacity_percentage = 1
@@ -228,9 +219,8 @@ def DeployOneLane(network: FlowTransportNetwork, link):
     """
     在给定的mixlink中转化一条车道为AV车道
     """
-    # print(link)
     if(network.mixLinkSet[link].lane_num < 2):
-        print(f"less than 2 lane2 on {link}")
+        # print(f"less than 2 lane2 on {link}")
         return
     else:
         network.mixLinkSet[link].lane_num -= 1
@@ -700,12 +690,12 @@ def assignment_loop(network: FlowTransportNetwork,
     while gap > accuracy:
         # x_bar为新分配的link flow
         # Get x_bar throug all-or-nothing assignment
-        print(f"{iteration_number}th mix travel time")
-        print([network.mixLinkSet[a].cost for a in network.mixLinkSet])
+        # print(f"{iteration_number}th mix travel time")
+        # print([network.mixLinkSet[a].cost for a in network.mixLinkSet])
         # print(f"{iteration_number}th av travel time")
         # print([network.avLinkSet[a].cost for a in network.avLinkSet])
         _, mix_x_bar, av_x_bar = loadAON(network=network)
-        print("mix_x_bar")
+        # print("mix_x_bar")
         # print(mix_x_bar)
         # print("########################")
         # print("av_x_bar")
@@ -811,60 +801,156 @@ def assignment_loop(network: FlowTransportNetwork,
 
 def writeResults(deployIter, network: FlowTransportNetwork, output_file: str, TSTT: float, costFunction=BPRcostFunction,
                  systemOptimal: bool = False, verbose: bool = True):
-    outFile = open(output_file, "a")
-    # TSTT = get_TSTT(network=network, costFunction=costFunction)
-    if verbose:
-        # print("\nTotal system travel time:", f'{TSTT} secs')
-        print("\nTotal system travel time:", f'TSTT: {TSTT} secs')
-    # tmpOut = "Total CV Travel Time:\t" + str(CV_TSTT)
-    # outFile.write(tmpOut + "\n")
-    # tmpOut = "Total AV Travel Time:\t" + str(AV_TSTT)
-    # outFile.write(tmpOut + "\n")
-    # tmpOut = "Cost function used:\t" + BPRcostFunction.__name__
-    # outFile.write(tmpOut + "\n")
-    # tmpOut = ["User equilibrium (UE) or system optimal (SO):\t"] + ["SO" if systemOptimal else "UE"]
-    # outFile.write("".join(tmpOut) + "\n\n")
-    tmpOut = str(deployIter) + "阶段部署"
-    outFile.write(tmpOut + "\n")
-    tmpOut = "\nTotal system travel time:" + str(TSTT)
-    outFile.write(tmpOut + "\n")
-    tmpOut = "AV-Dedicated Link Flow:"
-    outFile.write(tmpOut + "\n")
-    tmpOut = "init_node\tterm_node\tflow\tlane_num\ttravelTime"
-    outFile.write(tmpOut + "\n")
-    for i in network.avLinkSet:
-        tmpOut = str(network.avLinkSet[i].init_node) + "\t" + str(
-            network.avLinkSet[i].term_node) + "\t" + str(
-            network.avLinkSet[i].flow) + "\t" +str(network.avLinkSet[i].lane_num) + "\t" + str(costFunction(False,
-                                                                                                network.avLinkSet[i].fft,
-                                                                                                network.avLinkSet[i].alpha,
-                                                                                                network.avLinkSet[i].flow,
-                                                                                                network.avLinkSet[i].capacity,
-                                                                                                network.avLinkSet[i].beta,
-                                                                                                network.avLinkSet[i].length,
-                                                                                                #    network.avLinkSet[i].speedLimit
-                                                                                                ))
-        outFile.write(tmpOut + "\n")
+    # with open(output_file, "a") as outFile:
+    with open("result.csv", "a", encoding="utf-8-sig") as csvFile:
+        outFile = csv.writer(csvFile)
+        # TSTT = get_TSTT(network=network, costFunction=costFunction)
+        if verbose:
+            # print("\nTotal system travel time:", f'{TSTT} secs')
+            print("\nTotal system travel time:", f'TSTT: {TSTT} secs')
+        # tmpOut = str(deployIter) + "阶段部署"
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "当前阶段AV市场率: " + str(deployStage[deployIter][0]) + "\t当前阶段AV车道长度百分比限制: " + str(deployStage[deployIter][1])
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "\nTotal system travel time:" + str(TSTT)
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "AV-Dedicated Link Flow:"
+        # outFile.write(tmpOut + "\n")
 
-    tmpOut = "Mix-Flow Link Flow:"
-    outFile.write(tmpOut + "\n")
-    tmpOut = "init_node\tterm_node\tav_flow\tcv_flow\tlane_num\ttravelTime"
-    outFile.write(tmpOut + "\n")
-    for i in network.mixLinkSet:
-        tmpOut = str(network.mixLinkSet[i].init_node) + "\t" + str(
-            network.mixLinkSet[i].term_node) + "\t" + str(
-            network.mixLinkSet[i].av_flow) + "\t"  + str(
-            network.mixLinkSet[i].cv_flow) + "\t" + str(network.mixLinkSet[i].lane_num) + "\t" + str(costFunction(False,
-                                                                                                    network.mixLinkSet[i].fft,
-                                                                                                    network.mixLinkSet[i].alpha,
-                                                                                                    network.mixLinkSet[i].cv_flow,
-                                                                                                    network.mixLinkSet[i].capacity,
-                                                                                                    network.mixLinkSet[i].beta,
-                                                                                                    network.mixLinkSet[i].length,
-                                                                                                        ))
+        tmpOut = [str(deployIter) + "阶段部署"]
+        outFile.writerow(tmpOut)
+        tmpOut = ["当前阶段AV市场率: " + str(deployStage[deployIter][0]) + "\t当前阶段AV车道长度百分比限制: " + str(deployStage[deployIter][1])]
+        outFile.writerow(tmpOut)
+        tmpOut = ["\nTotal system travel time:" + str(TSTT)]
+        outFile.writerow(tmpOut)
+        tmpOut = ["AV-Dedicated Link Flow:"]
+        outFile.writerow(tmpOut)
 
-        outFile.write(tmpOut + "\n")
-    outFile.close()
+        tmpOut = ["出发点"]
+        for i in network.avLinkSet:
+            tmpOut.append(str(network.avLinkSet[i].init_node))
+        outFile.writerow(tmpOut)
+        tmpOut = ["到达点"]
+        for i in network.avLinkSet:
+            tmpOut.append(str(network.avLinkSet[i].term_node))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["车流量"]
+        for i in network.avLinkSet:
+            tmpOut.append(str(network.avLinkSet[i].flow))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["车道数"]
+        for i in network.avLinkSet:
+            tmpOut.append(str(network.avLinkSet[i].lane_num))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["通行时间"]
+        for i in network.avLinkSet:
+            tmpOut.append(str(network.avLinkSet[i].cost))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+
+        # tmpOut = "init_node\tterm_node\tflow\tlane_num\ttravelTime"
+        # outFile.write(tmpOut + "\n")
+        # for i in network.avLinkSet:
+        #     tmpOut = str(network.avLinkSet[i].init_node) + "\t" + str(
+        #         network.avLinkSet[i].term_node) + "\t" + str(
+        #         network.avLinkSet[i].flow) + "\t" +str(network.avLinkSet[i].lane_num) + "\t" + str(costFunction(False,
+        #                                                                                             network.avLinkSet[i].fft,
+        #                                                                                             network.avLinkSet[i].alpha,
+        #                                                                                             network.avLinkSet[i].flow,
+        #                                                                                             network.avLinkSet[i].capacity,
+        #                                                                                             network.avLinkSet[i].beta,
+        #                                                                                             network.avLinkSet[i].length,
+        #                                                                                             #    network.avLinkSet[i].speedLimit
+        #                                                                                             ))
+        #     outFile.write(tmpOut + "\n")
+        tmpOut = ["Mix-Flow Link Flow:"]
+        outFile.writerow(tmpOut)
+        tmpOut = ["出发点"]
+        for i in network.mixLinkSet:
+            tmpOut.append(str(network.mixLinkSet[i].init_node))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["到达点"]
+        for i in network.mixLinkSet:
+            tmpOut.append(str(network.mixLinkSet[i].term_node))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["AV车流量"]
+        for i in network.mixLinkSet:
+            tmpOut.append(str(network.mixLinkSet[i].av_flow))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["CV车流量"]
+        for i in network.mixLinkSet:
+            tmpOut.append(str(network.mixLinkSet[i].cv_flow))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["车道数"]
+        for i in network.avLinkSet:
+            tmpOut.append(str(network.mixLinkSet[i].lane_num))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+        tmpOut = ["通行时间"]
+        for i in network.avLinkSet:
+            tmpOut.append(str(network.mixLinkSet[i].cost))
+            # tmpOut += "\t"
+        outFile.writerow(tmpOut)
+
+
+        # tmpOut = "Mix-Flow Link Flow:"
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "出发点\t"
+        # for i in network.mixLinkSet:
+        #     tmpOut += str(network.mixLinkSet[i].init_node)
+        #     tmpOut += "\t"
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "到达点\t"
+        # for i in network.mixLinkSet:
+        #     tmpOut += str(network.mixLinkSet[i].term_node)
+        #     tmpOut += "\t"
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "AV车流量\t"
+        # for i in network.mixLinkSet:
+        #     tmpOut += str(network.mixLinkSet[i].av_flow)
+        #     tmpOut += "\t"
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "CV车流量\t"
+        # for i in network.mixLinkSet:
+        #     tmpOut += str(network.mixLinkSet[i].cv_flow)
+        #     tmpOut += "\t"
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "车道数\t"
+        # for i in network.avLinkSet:
+        #     tmpOut += str(network.mixLinkSet[i].lane_num)
+        #     tmpOut += "\t"
+        # outFile.write(tmpOut + "\n")
+        # tmpOut = "通行时间\t"
+        # for i in network.avLinkSet:
+        #     tmpOut += str(network.mixLinkSet[i].cost)
+        #     tmpOut += "\t"
+        # outFile.write(tmpOut + "\n")
+
+
+        # tmpOut = "init_node\tterm_node\tav_flow\tcv_flow\tlane_num\ttravelTime"
+        # outFile.write(tmpOut + "\n")
+        # for i in network.mixLinkSet:
+        #     tmpOut = str(network.mixLinkSet[i].init_node) + "\t" + str(
+        #         network.mixLinkSet[i].term_node) + "\t" + str(
+        #         network.mixLinkSet[i].av_flow) + "\t"  + str(
+        #         network.mixLinkSet[i].cv_flow) + "\t" + str(network.mixLinkSet[i].lane_num) + "\t" + str(costFunction(False,
+        #                                                                                                 network.mixLinkSet[i].fft,
+        #                                                                                                 network.mixLinkSet[i].alpha,
+        #                                                                                                 network.mixLinkSet[i].cv_flow,
+        #                                                                                                 network.mixLinkSet[i].capacity,
+        #                                                                                                 network.mixLinkSet[i].beta,
+        #                                                                                                 network.mixLinkSet[i].length,
+        #                                                                                                     ))
+
+        #     outFile.write(tmpOut + "\n")
+            # outFile.close()
 
 
 def load_network(net_file: str,
@@ -997,23 +1083,22 @@ def deploy_loop(network: FlowTransportNetwork,
                             maxTime=maxTime)
         candidateDict = {}
     # 2. 构建可选部署AV车道集合
+        if verbose:
+            print("构建可部署车道集合...")
         for mix_l in network.mixLinkSet:
             if (network.mixLinkSet[mix_l].lane_num > 1) and \
                 ((network.mixLinkSet[mix_l].length + network.avLinkTotalLength) / network.linkTotalLength <= network.avLengthLimit):
                 candidateDict[mix_l] = 0.0
     # 3. 当无可部署AV车道时,结束算法
         if len(candidateDict) == 0:
-            print(f"所有车道总长为{network.linkTotalLength}")
-            print(f"AV车道限长为{network.linkTotalLength*network.avLengthLimit},当前AV车道总长已达{network.avLinkTotalLength}")
-            print("没有可部署车道")
-        #     writeResults(network=network,
-        #                 output_file=results_file,
-        #                 costFunction=costFunction,
-        #                 systemOptimal=systemOptimal,
-        #                 verbose=verbose,
-        #                 TSTT=TSTT)
+            if verbose:
+                print(f"所有车道总长为{network.linkTotalLength}")
+                print(f"AV车道限长为{network.linkTotalLength*network.avLengthLimit},当前AV车道总长已达{network.avLinkTotalLength}")
+                print("没有可部署车道")
             break
     # 4. 计算可部署AV车道的混合link的瞬时tt变化并保存在candidateDict的值中
+        if verbose:
+            print("计算瞬时travel time变化...")
         for l in candidateDict:
             candidateDict[l] = computeIttc(network=network, link = l)
         # print("瞬时旅行时间表")
@@ -1023,7 +1108,8 @@ def deploy_loop(network: FlowTransportNetwork,
         # print("排序后瞬时旅行时间表")
         # print(candidateList)
     # 6. 选取ittc最小的mixlink部署一条AV车道
-        
+        if verbose:
+            print("部署车道...")
         # if len(candidateDict) == 0:
         #     print(f"所有车道总长为{network.linkTotalLength}")
         #     print(f"AV车道限长为{network.linkTotalLength*network.avLengthLimit},当前AV车道总长已达{network.avLinkTotalLength}")
@@ -1032,12 +1118,16 @@ def deploy_loop(network: FlowTransportNetwork,
         # for i in range(len(candidateList) // 10):
             # if network.avLinkTotalLength + network.mixLinkSet[candidateList[i][0]].length > network.linkTotalLength*network.avLengthLimit:
             #     continue
+            
+        # 每部署50条车道进行一次UE计算
         timeToUE += 1
         timeToUE %= 50  
         DeployOneLane(network=network, link = candidateList[0][0])
-        print(f"部署一条AV专用车道到{candidateList[0][0]}")
-        print(f"部署后混合车道数为{network.mixLinkSet[candidateList[0][0]].lane_num},\
-            AV专用车道数为{network.avLinkSet[candidateList[0][0]].lane_num}")
+        # print(f"部署一条AV专用车道到{candidateList[0][0]}")
+        # print(f"部署后混合车道数为{network.mixLinkSet[candidateList[0][0]].lane_num},\
+        #     AV专用车道数为{network.avLinkSet[candidateList[0][0]].lane_num}")
+    if verbose:
+        print("当前阶段部署结束, 写入结果...")
     writeResults(deployIter=deployIter,       
                         network=network,
                         output_file=results_file,
@@ -1061,19 +1151,19 @@ if __name__ == '__main__':
     
     network = load_network(net_file=net_file)
     # network.avRate = 0.05
-    TSTT = computeAssingment(network=network,
-                            costFunction=BPRcostFunction,
-                            systemOptimal=False,
-                            verbose=True,
-                            accuracy=0.001,
-                            maxIter=250,
-                            maxTime=6000)
-    print(TSTT)
-    # for i in range(10):
-    #     print("#######################")
-    #     print(f"第{i}阶段部署")
-    #     localtime = time.asctime( time.localtime(time.time()))
-    #     print(f"当前时间{localtime}")
-    #     print("#######################")
+    # TSTT = computeAssingment(network=network,
+    #                         costFunction=BPRcostFunction,
+    #                         systemOptimal=False,
+    #                         verbose=True,
+    #                         accuracy=0.001,
+    #                         maxIter=250,
+    #                         maxTime=6000)
+    # print(TSTT)
+    for i in range(10):
+        print("#######################")
+        print(f"第{i}阶段部署")
+        localtime = time.asctime( time.localtime(time.time()))
+        print(f"当前时间{localtime}")
+        print("#######################")
 
-    #     deploy_loop(network=network, results_file=results_file, deployIter=i)
+        deploy_loop(network=network, results_file=results_file, deployIter=i)
