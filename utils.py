@@ -16,6 +16,9 @@ class PathUtils:
     input_networks_folder = get_project_root() / "tntp_networks"
     processed_networks_folder = get_project_root() / "processed_networks"
 
+    # Result
+    # result_folder = get_project_root() / "assignment_results"
+
     # FILES
 
     # Network files
