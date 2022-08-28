@@ -22,10 +22,10 @@ AV_LINK = 0
 MIX_LINK = 1
 
 # 每部署多少条AV车道进行一次UE
-UE_ITERNAL = 1
+UE_ITERNAL = 40
 
-# 默认每条link车道数
-DEFAULT_LANENUM = 30
+# 默认道路条数的种类数
+NB_CLASS = 6
 
 # 不同部署阶段对应的avRate和avLengthLimit
 deployStage =\
@@ -267,6 +267,11 @@ def computeIttc(network: FlowTransportNetwork, link):
                         tan1 * (network.avLinkSet[link].flow + network.mixLinkSet[link].av_flow)
     # 部分av车辆移动到avlink
     else:
+        # print(f"network.mixLinkSet[link].lane_num:{network.mixLinkSet[link].lane_num}")
+        # print(f"network.avLinkSet[link].lane_num:{network.avLinkSet[link].lane_num}")
+        # print(f"network.mixLinkSet[link].av_flow:{network.mixLinkSet[link].av_flow}")
+        # print(f"network.mixLinkSet[link].cv_flow:{network.mixLinkSet[link].cv_flow}")
+        # print(f"network.avLinkSet[link].flow:{network.avLinkSet[link].flow}")
         b = (((network.mixLinkSet[link].lane_num-1) * network.hav * (network.mixLinkSet[link].av_flow+network.avLinkSet[link].flow)) \
             - ((network.avLinkSet[link].lane_num+1) * network.hcv * network.mixLinkSet[link].cv_flow))\
                 / (network.hav * 4)
@@ -537,9 +542,8 @@ def readDemand(demand_df: pd.DataFrame, network: FlowTransportNetwork):
 
 
 def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
-    nb_class = 3
-    breaks = jenkspy.jenks_breaks(network_df["capacity"], nb_class=nb_class)
-    print(breaks)
+    breaks = jenkspy.jenks_breaks(network_df["capacity"], nb_class=NB_CLASS)
+    # print(breaks)
     for index, row in network_df.iterrows():
         init_node = str(int(row["init_node"]))
         term_node = str(int(row["term_node"]))
@@ -549,8 +553,14 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
         b = row["b"]
         power = row["power"]
         speed = row["speed"]
-        lane_num = DEFAULT_LANENUM;
-
+        # lane_num = DEFAULT_LANENUM;
+        lane_num = 0
+        # print(breaks)
+        for i in range(NB_CLASS):
+            if breaks[i] <= capacity <= breaks[i+1]:
+                lane_num = i + 2
+                break
+        # print(f"lane_num on {init_node}-{term_node} is {lane_num}")
         network.linkTotalLength += length
 
 
@@ -562,7 +572,7 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
                                                     b=1.2, # alpha
                                                     power=5, # belta
                                                     speed_limit=speed,
-                                                    lane_num=(4-lane_num)
+                                                    lane_num=(NB_CLASS + 1 - lane_num)
                                                     #  toll=toll,
                                                     #  linkType=link_type
                                                     )
