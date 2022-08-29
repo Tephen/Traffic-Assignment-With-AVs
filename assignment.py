@@ -542,6 +542,7 @@ def readDemand(demand_df: pd.DataFrame, network: FlowTransportNetwork):
 
 
 def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
+    # 获取自然间断点
     breaks = jenkspy.jenks_breaks(network_df["capacity"], nb_class=NB_CLASS)
     # print(breaks)
     for index, row in network_df.iterrows():
@@ -550,6 +551,9 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
         capacity = row["capacity"]
         length = row["length"]
         free_flow_time = row["free_flow_time"]
+        # 处理数据中fft为0的路段
+        if free_flow_time == 0.0:
+            free_flow_time = 0.1
         b = row["b"]
         power = row["power"]
         speed = row["speed"]
@@ -572,7 +576,7 @@ def readNetwork(network_df: pd.DataFrame, network: FlowTransportNetwork):
                                                     b=1.2, # alpha
                                                     power=5, # belta
                                                     speed_limit=speed,
-                                                    lane_num=(NB_CLASS + 1 - lane_num)
+                                                    lane_num=0
                                                     #  toll=toll,
                                                     #  linkType=link_type
                                                     )
@@ -965,7 +969,7 @@ def deploy_loop(network: FlowTransportNetwork,
             # 检查剩余车道数和AV车道总长度限制
             if (network.mixLinkSet[mix_l].lane_num > 1) and \
                 ((network.mixLinkSet[mix_l].length + network.avLinkTotalLength) / network.linkTotalLength <= network.avLengthLimit):
-                # 只保留瞬时tt变化<=0的备选车道位置
+                # 只保留瞬时tt变化<0的备选车道位置
                 if computeIttc(network=network, link = mix_l) <= 0:
                     candidateDict[mix_l] = computeIttc(network=network, link = mix_l)
     # 3. 当无可部署AV车道时,结束算法
@@ -977,8 +981,7 @@ def deploy_loop(network: FlowTransportNetwork,
                 break
     # 4. 对可部署的混合link按ittc从小到大排序
         candidateList = sorted(candidateDict.items(), key = lambda kv:(kv[1], kv[0]))
-    # 5. 选取ittc最小的mixlink部署一条AV车道  
-        # 每部署50条车道进行一次UE计算
+    # 5. 选取ittc最小的mixlink部署一条AV车道
         timeToUE += 1
         timeToUE %= UE_ITERNAL
         deployNum += 1  
