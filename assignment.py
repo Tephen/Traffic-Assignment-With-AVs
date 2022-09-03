@@ -952,7 +952,7 @@ def deploy_loop(network: FlowTransportNetwork,
     deployNum = 0
     while True:
     # 1. 求解UE问题
-        # 每部署50条车道进行一次UE计算
+
         if timeToUE == 0:
             TSTT = computeAssingment(network=network,
                             costFunction=costFunction,

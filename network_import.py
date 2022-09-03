@@ -3,9 +3,10 @@ import numpy as np
 import openmatrix as omx
 
 from utils import PathUtils
+import random
 
 
-def import_network(network_file: str, demand_file: str, force_reprocess: bool = False):
+def import_network(network_file: str, demand_file: str, force_reprocess: bool = False, is_heterogeneous: bool = False):
     """
     This method imports the network and the demand from the respective tntp files (see ttps://github.com/bstabler/TransportationNetworks)
     After having imported them, it stores them in a quicker format in the same directory as the input files,
@@ -21,35 +22,51 @@ def import_network(network_file: str, demand_file: str, force_reprocess: bool = 
     #windows系統
     if sys.platform.startswith('win'):
         network_file_csv = network_file.split(".")[0].split("\\")[-1] + ".csv"
-        demand_file_csv = demand_file.split(".")[0].split("\\")[-1] + ".csv"
+        if is_heterogeneous:
+            demand_file_csv = demand_file.split(".")[0].split("\\")[-1] + "_heterogeneous.csv"
+        else:
+            demand_file_csv = demand_file.split(".")[0].split("\\")[-1] + ".csv"
     else:
         network_file_csv = network_file.split(".")[0].split("/")[-1] + ".csv"
-        demand_file_csv = demand_file.split(".")[0].split("/")[-1] + ".csv"
-    
+        if is_heterogeneous:
+            demand_file_csv = demand_file.split(".")[0].split("/")[-1] + "_heterogeneous.csv"
+        else:
+            demand_file_csv = demand_file.split(".")[0].split("/")[-1] + ".csv"
 
     network_file_csv = PathUtils.processed_networks_folder / network_file_csv
     demand_file_csv = PathUtils.processed_networks_folder / demand_file_csv
 
     if network_file_csv.is_file() and not force_reprocess:
+        print("直接读取net")
         net_df = pd.read_csv(str(network_file_csv),
                              sep='\t')
     else:
+        print("处理net到csv")
         net_df = _net_file2df(network_file)
         net_df.to_csv(path_or_buf=str(network_file_csv),
                       sep='\t',
                       index=False)
 
     if demand_file_csv.is_file() and not force_reprocess:
+        print("直接读取demand")
         demand_df = pd.read_csv(str(demand_file_csv),
                                 sep='\t')
     else:
+        print("处理demand到csv")
         tripSet = _demand_file2trips(demand_file)
-        demand_df = pd.DataFrame(columns=["init_node", "term_node", "demand"])
+        if is_heterogeneous:
+            demand_df = pd.DataFrame(columns=["init_node", "term_node", "demand", "av_rate"])
+        else:
+            demand_df = pd.DataFrame(columns=["init_node", "term_node", "demand"])
 
         k = 0
         for orig in tripSet:
             for dest in tripSet[orig]:
-                demand_df.loc[k] = [orig, dest, tripSet[orig][dest]]
+                # 随机生成avRate
+                if is_heterogeneous:
+                    demand_df.loc[k] = [orig, dest, tripSet[orig][dest], random.uniform(0.2, 0.4)]
+                else:
+                    demand_df.loc[k] = [orig, dest, tripSet[orig][dest]]
                 k += 1
 
         demand_df = demand_df.astype({"init_node": int, "term_node": int})
